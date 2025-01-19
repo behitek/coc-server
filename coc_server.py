@@ -9,6 +9,7 @@ from typing import Dict, Optional
 import httpx
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
@@ -19,6 +20,15 @@ BASE_URL = "https://api.clashofclans.com/v1"
 UPDATE_INTERVAL = 12  # hours
 
 app = FastAPI(title="Clash of Clans API Cache")
+
+# cors
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class CacheManager:
     def __init__(self, cache_dir: str):
