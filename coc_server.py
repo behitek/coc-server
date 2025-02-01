@@ -18,6 +18,7 @@ CACHE_DIR = "cache"
 API_KEY = os.getenv("API_KEY")
 BASE_URL = "https://api.clashofclans.com/v1"
 UPDATE_INTERVAL = 12  # hours
+SKIP_CACHE = True  # Flag to control whether to skip caching
 
 app = FastAPI(title="Clash of Clans API Cache")
 
@@ -107,16 +108,19 @@ async def get_clan_info(clan_tag: str, background_tasks: BackgroundTasks):
     if not clan_tag.startswith('#'):
         clan_tag = f"#{clan_tag}"
     endpoint = f"/clans/{clan_tag}"
-    # Try to get from cache
-    cached_data = cache_manager.read_cache(endpoint)
-    if cached_data:
-        # Schedule background update if needed
-        background_tasks.add_task(update_cache, endpoint)
-        return cached_data
-        
-    # If no cache, fetch directly
+    
+    if not SKIP_CACHE:
+        # Try to get from cache
+        cached_data = cache_manager.read_cache(endpoint)
+        if cached_data:
+            # Schedule background update if needed
+            background_tasks.add_task(update_cache, endpoint)
+            return cached_data
+    
+    # If no cache or SKIP_CACHE is True, fetch directly
     data = await clash_api.fetch_data(endpoint)
-    cache_manager.write_cache(endpoint, data)
+    if not SKIP_CACHE:
+        cache_manager.write_cache(endpoint, data)
     return data
 
 @app.get("/clan/{clan_tag}/currentwar")
@@ -124,14 +128,17 @@ async def get_clan_currentwar(clan_tag: str, background_tasks: BackgroundTasks):
     if not clan_tag.startswith('#'):
         clan_tag = f"#{clan_tag}"
     endpoint = f"/clans/{clan_tag}/currentwar"
-        
-    cached_data = cache_manager.read_cache(endpoint)
-    if cached_data:
-        background_tasks.add_task(update_cache, endpoint)
-        return cached_data
-        
+    
+    if not SKIP_CACHE:
+        cached_data = cache_manager.read_cache(endpoint)
+        if cached_data:
+            background_tasks.add_task(update_cache, endpoint)
+            return cached_data
+    
+    # If no cache or SKIP_CACHE is True, fetch directly
     data = await clash_api.fetch_data(endpoint)
-    cache_manager.write_cache(endpoint, data)
+    if not SKIP_CACHE:
+        cache_manager.write_cache(endpoint, data)
     return data
 
 if __name__ == "__main__":
