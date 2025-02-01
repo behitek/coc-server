@@ -1,9 +1,8 @@
 services:
   coc-server:
     image: coc-server
-    # mount cache directory
     volumes:
-      - ./cache:/app/cache
+      - $PWD:/app
     ports:
       - 8501:8000
     restart: always
