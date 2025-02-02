@@ -1,14 +1,11 @@
-import json
 import os
-import re
+import traceback
 import urllib
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
@@ -31,50 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class CacheManager:
-    def __init__(self, cache_dir: str):
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(exist_ok=True)
-        
-    def _normalize_endpoint(self, endpoint: str) -> str:
-        """Normalize endpoint to consistent format for cache keys"""
-        # replace non-alphanumeric characters with underscores
-        return re.sub(r'[^a-zA-Z0-9]', '_', endpoint)
-    
-    def get_cache_path(self, endpoint: str) -> Path:
-        # Normalize endpoint and clan tag
-        normalized_endpoint = self._normalize_endpoint(endpoint)
-        return self.cache_dir / f"{normalized_endpoint}.json"
-    
-    def read_cache(self, endpoint: str) -> Optional[Dict]:
-        cache_path = self.get_cache_path(endpoint)
-        if not cache_path.exists():
-            return None
-            
-        with cache_path.open('r') as f:
-            data = json.load(f)
-            if datetime.fromisoformat(data['cached_at']) + timedelta(hours=UPDATE_INTERVAL) < datetime.now():
-                return None
-            return data['content']
-            
-    def write_cache(self, endpoint: str, content: Dict):
-        cache_path = self.get_cache_path(endpoint)
-        cache_data = {
-            'cached_at': datetime.now().isoformat(),
-            'content': content
-        }
-        with cache_path.open('w') as f:
-            json.dump(cache_data, f)
-
-# Update the background task function to use consistent cache keys
-async def update_cache(endpoint: str):
-    """Background task to update cache"""
-    try:
-        data = await clash_api.fetch_data(f"{endpoint}")
-        # Use the same endpoint normalization as CacheManager
-        cache_manager.write_cache(endpoint, data)
-    except Exception as e:
-        print(f"Error updating cache for {endpoint}: {str(e)}")
 
 class ClashAPI:
     def __init__(self, api_key: str):
@@ -82,64 +35,51 @@ class ClashAPI:
         self.headers = {
             'Authorization': f'Bearer {api_key}'
         }
+
+    def allowed(self, endpoint: str) -> bool:
+        # Only allowed to retrieve our clan info
+        # If someone tries to retrieve someone else's clan info, they will be blocked
+        return "2G9YRCRV2" in endpoint # 2G9YRCRV2 is my clan tag
         
-    async def fetch_data(self, endpoint: str) -> Dict:
+    async def request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict:
         async with httpx.AsyncClient() as client:
             # encode endpoint to be safe
             endpoint = urllib.parse.quote(endpoint)
-            response = await client.get(
-                f"{BASE_URL}{endpoint}",
-                headers=self.headers
-            )
+            if not self.allowed(endpoint):
+                raise HTTPException(status_code=403, detail="Endpoint not allowed")
+            url = f"{BASE_URL}{endpoint}"
+            if method.upper() == 'GET':
+                response = await client.get(url, headers=self.headers)
+            elif method.upper() == 'POST':
+                response = await client.post(url, headers=self.headers, json=data)
+            else:
+                raise HTTPException(status_code=405, detail=f"Method {method} not allowed")
+                
             if response.status_code != 200:
+                print("Response:", response.text)
                 raise HTTPException(
                     status_code=response.status_code,
                     detail=f"Clash API error: {response.text}"
                 )
             return response.json()
 
-cache_manager = CacheManager(CACHE_DIR)
 clash_api = ClashAPI(API_KEY)
 
+@app.get("/{path:path}")
+async def forward_get(path: str):
+    try:
+        return await clash_api.request('GET', f"/{path}")
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail="Invalid request")
 
-@app.get("/clan/{clan_tag}")
-async def get_clan_info(clan_tag: str, background_tasks: BackgroundTasks):
-    # Format clan tag
-    if not clan_tag.startswith('#'):
-        clan_tag = f"#{clan_tag}"
-    endpoint = f"/clans/{clan_tag}"
-    
-    if not SKIP_CACHE:
-        # Try to get from cache
-        cached_data = cache_manager.read_cache(endpoint)
-        if cached_data:
-            # Schedule background update if needed
-            background_tasks.add_task(update_cache, endpoint)
-            return cached_data
-    
-    # If no cache or SKIP_CACHE is True, fetch directly
-    data = await clash_api.fetch_data(endpoint)
-    if not SKIP_CACHE:
-        cache_manager.write_cache(endpoint, data)
-    return data
-
-@app.get("/clan/{clan_tag}/currentwar")
-async def get_clan_currentwar(clan_tag: str, background_tasks: BackgroundTasks):
-    if not clan_tag.startswith('#'):
-        clan_tag = f"#{clan_tag}"
-    endpoint = f"/clans/{clan_tag}/currentwar"
-    
-    if not SKIP_CACHE:
-        cached_data = cache_manager.read_cache(endpoint)
-        if cached_data:
-            background_tasks.add_task(update_cache, endpoint)
-            return cached_data
-    
-    # If no cache or SKIP_CACHE is True, fetch directly
-    data = await clash_api.fetch_data(endpoint)
-    if not SKIP_CACHE:
-        cache_manager.write_cache(endpoint, data)
-    return data
+@app.post("/{path:path}")
+async def forward_post(path: str, data: Dict):
+    try:
+        return await clash_api.request('POST', f"/{path}", data)
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail="Invalid request")
 
 if __name__ == "__main__":
     import uvicorn
