@@ -13,7 +13,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 # Configuration
 API_KEY = os.getenv("API_KEY")
 BASE_URL = "https://api.clashofclans.com/v1"
-ALLOWED_CLAN = ["2G9YRCRV2", "#QQ0VGYCV"]
+ALLOWED_CLAN = ["2G9YRCRV2", "2QQ0VGYCV"]
 app = FastAPI(title="Clash of Clans API Cache")
 
 # cors
