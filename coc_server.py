@@ -11,11 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 # Configuration
-CACHE_DIR = "cache"
 API_KEY = os.getenv("API_KEY")
 BASE_URL = "https://api.clashofclans.com/v1"
-UPDATE_INTERVAL = 12  # hours
-SKIP_CACHE = True  # Flag to control whether to skip caching
 
 app = FastAPI(title="Clash of Clans API Cache")
 
