@@ -13,7 +13,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 # Configuration
 API_KEY = os.getenv("API_KEY")
 BASE_URL = "https://api.clashofclans.com/v1"
-
+ALLOWED_CLAN = ["2G9YRCRV2", "#QQ0VGYCV"]
 app = FastAPI(title="Clash of Clans API Cache")
 
 # cors
@@ -36,7 +36,10 @@ class ClashAPI:
     def allowed(self, endpoint: str) -> bool:
         # Only allowed to retrieve our clan info
         # If someone tries to retrieve someone else's clan info, they will be blocked
-        return "2G9YRCRV2" in endpoint # 2G9YRCRV2 is my clan tag
+        for clan in ALLOWED_CLAN:
+            if clan in endpoint:
+                return True
+        return False
         
     async def request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict:
         async with httpx.AsyncClient() as client:
